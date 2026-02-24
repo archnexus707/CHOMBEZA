@@ -1,0 +1,35 @@
+CHOMBEZA BUG BOUNTY PRO - END USER LICENSE AGREEMENT (EULA)
+Version 2.0 - February 2026
+
+Copyright (c) 2026 Dickson Godwin Massawe (archnexus707)
+
+IMPORTANT - READ CAREFULLY: This End-User License Agreement ("EULA") is a legal 
+agreement between you and Dickson Godwin Massawe for the CHOMBEZA software.
+
+1. LICENSE GRANT
+   The author grants you a non-exclusive, non-transferable license to use 
+   CHOMBEZA solely for authorized security testing on systems you own or 
+   have explicit written permission to test.
+
+2. LEGAL USE ONLY
+   This tool is for AUTHORIZED TESTING ONLY. Unauthorized use against systems 
+   without permission is strictly prohibited and may violate laws.
+
+3. RESTRICTIONS
+   You may not:
+   - Use for illegal purposes
+   - Distribute, rent, lease, or lend the software
+   - Reverse engineer, decompile, or disassemble
+   - Remove any proprietary notices
+
+4. DISCLAIMER OF WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND.
+
+5. LIMITATION OF LIABILITY
+   The author shall not be liable for any damages arising from use of this software.
+
+6. ACCEPTANCE
+   By installing or using this software, you agree to be bound by this EULA.
+
+For inquiries: dicksonmassawe707@gmail.com
+GitHub: https://github.com/dkhacker707/chombeza

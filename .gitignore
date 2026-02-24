@@ -1,0 +1,80 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.spec
+dist/
+build/
+
+# Installer output (the large setup.exe)
+installer_output/
+*.exe
+*.msi
+
+# Reports and user data
+reports/
+*.html
+*.pdf
+*.json
+*.csv
+logs/
+*.log
+install_errors.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Project specific - DELETE these (old/misspelled)
+unistall.bat
+unistall.sh
+toon.jpg
+
+# Project specific - KEEP these (for developers)
+!install.bat
+!install.sh
+!uninstall.bat
+!uninstall.sh
+!config.json
+!README.md
+!requirements.txt
+!favicon2.ico
+
+# Virtual Environment (but don't delete, just ignore)
+venv/
+env/
+
+# Database
+*.db
+*.sqlite3
