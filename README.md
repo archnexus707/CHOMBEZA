@@ -86,7 +86,7 @@
 <summary>Click to expand Windows installation instructions</summary>
 
 #### Option 1: Download Installer (Recommended)
-1. Download the latest installer from [Releases](https://github.com/dkhacker707/chombeza/releases)
+1. Download the latest installer from [Releases](https://github.com/archnexus707/CHOMBEZA/releases)
 2. Run `CHOMBEZA_Setup_v2.0.exe`
 3. Follow the installation wizard
 4. Launch from Desktop or Start Menu
@@ -94,7 +94,7 @@
 #### Option 2: Install from Source
 ```batch
 :: Clone repository
-git clone https://github.com/dkhacker707/chombeza.git
+git clone https://github.com/archnexus707/CHOMBEZA.git      
 cd chombeza
 
 :: Run installer
@@ -109,7 +109,7 @@ python main.py
 
 ### **Linux/macOS**
 # Clone repository
-git clone https://github.com/dkhacker707/chombeza.git
+git clone https://github.com/archnexus707/CHOMBEZA.git
 cd chombeza
 
 # Make installer executable
