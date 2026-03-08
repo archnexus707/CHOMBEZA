@@ -9,11 +9,13 @@ import base64
 import re
 import threading
 import logging
-logger = logging.getLogger("CHOMBEZA.Utils")
+from typing import Dict, List, Optional, Tuple, Union, Any
 import urllib.parse
-from typing import Dict, List, Optional, Tuple, Union
 from urllib.parse import urlparse, urljoin, parse_qs, quote
 from bs4 import BeautifulSoup
+
+# Configure logger FIRST before any other code
+logger = logging.getLogger("CHOMBEZA.Utils")
 
 # Try to import optional dependencies
 try:
@@ -21,20 +23,24 @@ try:
     HAS_PIL = True
 except ImportError:
     HAS_PIL = False
+    logger.debug("PIL not available")
 
 try:
     import pyautogui
     HAS_PYAUTOGUI = True
-except Exception as e:
-    # pyautogui can raise runtime errors on headless systems (no display)
+except ImportError:
     HAS_PYAUTOGUI = False
-    logger.debug(f"PyAutoGUI not available: {e}")
+    logger.debug("PyAutoGUI not available")
+except Exception as e:
+    HAS_PYAUTOGUI = False
+    logger.debug(f"PyAutoGUI error: {e}")
 
 try:
     import socks
     HAS_SOCKS = True
 except ImportError:
     HAS_SOCKS = False
+    logger.debug("PySocks not available")
 
 try:
     from selenium import webdriver
@@ -43,13 +49,14 @@ try:
     HAS_SELENIUM = True
 except ImportError:
     HAS_SELENIUM = False
+    logger.debug("Selenium not available")
 
+# Set up basic logging configuration
 logging.basicConfig(
     level=logging.INFO,
     format='[%(levelname)s] %(asctime)s - %(name)s: %(message)s',
     datefmt='%H:%M:%S'
 )
-logger = logging.getLogger("NeonReaper.Utils")
 
 class ProxyManager:
     """Manages HTTP/HTTPS/SOCKS proxies for requests"""
@@ -459,42 +466,171 @@ class PayloadGenerator:
         return random.randint(min_val, max_val)
     
     @staticmethod
-    def mutate_payload(payload: str) -> List[str]:
-        """Generate common mutations of a payload"""
-        mutations = set()  # Use set to avoid duplicates
-        mutations.add(payload)
+    def mutate_payload(payload: str, max_mutations: int = 5, techniques: List[str] = None) -> List[str]:
+        """
+        Generate configurable mutations of a payload
         
-        # Add common suffixes/prefixes
-        mutations.add(payload + "'")
-        mutations.add(payload + "\"")
-        mutations.add(payload + "`")
-        mutations.add(payload + ")")
-        mutations.add(payload + "(")
-        mutations.add(payload + "}}")
-        mutations.add(payload + "{{")
+        Args:
+            payload: Base payload string
+            max_mutations: Maximum number of mutations to generate
+            techniques: List of mutation techniques to apply (None = all)
+            
+        Returns:
+            List of mutated payloads
+        """
+        if techniques is None:
+            techniques = [
+                'url_encode', 'double_url_encode', 'html_encode', 
+                'unicode_escape', 'hex_encode', 'base64_wrap',
+                'case_variations', 'whitespace_injection', 'comment_injection',
+                'nullbyte_injection', 'linebreak_injection', 'tab_injection'
+            ]
         
-        # URL encode variants
-        encoded = quote(payload)
-        mutations.add(encoded)
+        mutations = set()
+        mutations.add(payload)  # Original
         
-        # Double URL encode
-        double_encoded = quote(quote(payload))
-        mutations.add(double_encoded)
+        technique_functions = {
+            'url_encode': PayloadGenerator._url_encode,
+            'double_url_encode': PayloadGenerator._double_url_encode,
+            'html_encode': PayloadGenerator._html_encode,
+            'unicode_escape': PayloadGenerator._unicode_escape,
+            'hex_encode': PayloadGenerator._hex_encode,
+            'base64_wrap': PayloadGenerator._base64_wrap,
+            'case_variations': PayloadGenerator._case_variations,
+            'whitespace_injection': PayloadGenerator._whitespace_injection,
+            'comment_injection': PayloadGenerator._comment_injection,
+            'nullbyte_injection': PayloadGenerator._nullbyte_injection,
+            'linebreak_injection': PayloadGenerator._linebreak_injection,
+            'tab_injection': PayloadGenerator._tab_injection,
+        }
         
-        # Add whitespace variants
-        mutations.add(" " + payload)
-        mutations.add(payload + " ")
-        mutations.add("\t" + payload)
-        mutations.add(payload + "\t")
+        # Apply each requested technique
+        for technique in techniques:
+            if technique in technique_functions:
+                result = technique_functions[technique](payload)
+                if isinstance(result, list):
+                    mutations.update(result[:max_mutations//2])
+                else:
+                    mutations.add(result)
         
-        # Case variations for alphanumeric
-        if any(c.isalpha() for c in payload):
-            mutations.add(payload.upper())
-            mutations.add(payload.lower())
-            mutations.add(''.join(c.upper() if i%2 else c.lower() for i, c in enumerate(payload)))
+        # Convert to list and limit
+        mutations_list = list(mutations)
         
-        # Limit to prevent explosion
-        return list(mutations)[:20]
+        # Prioritize more interesting mutations
+        def mutation_score(m):
+            # Prefer mutations that are different from original
+            if m == payload:
+                return 0
+            # Prefer shorter mutations (less likely to be truncated)
+            if len(m) < len(payload) * 2:
+                return 2
+            return 1
+        
+        mutations_list.sort(key=mutation_score, reverse=True)
+        
+        return mutations_list[:max_mutations]
+    
+    @staticmethod
+    def _url_encode(payload: str) -> str:
+        """URL encode payload"""
+        import urllib.parse
+        return urllib.parse.quote(payload)
+    
+    @staticmethod
+    def _double_url_encode(payload: str) -> str:
+        """Double URL encode payload"""
+        import urllib.parse
+        return urllib.parse.quote(urllib.parse.quote(payload))
+    
+    @staticmethod
+    def _html_encode(payload: str) -> str:
+        """HTML entity encode payload"""
+        return ''.join([f'&#{ord(c)};' for c in payload])
+    
+    @staticmethod
+    def _unicode_escape(payload: str) -> str:
+        """Unicode escape payload"""
+        return ''.join([f'\\u{ord(c):04x}' for c in payload])
+    
+    @staticmethod
+    def _hex_encode(payload: str) -> str:
+        """Hex encode payload"""
+        return ''.join([f'%{ord(c):02x}' for c in payload])
+    
+    @staticmethod
+    def _base64_wrap(payload: str) -> str:
+        """Wrap in base64 eval"""
+        import base64
+        b64 = base64.b64encode(payload.encode()).decode()
+        return f"<script>eval(atob('{b64}'))</script>"
+    
+    @staticmethod
+    def _case_variations(payload: str) -> List[str]:
+        """Generate case variations"""
+        if not any(c.isalpha() for c in payload):
+            return [payload]
+        
+        variations = set()
+        variations.add(payload.upper())
+        variations.add(payload.lower())
+        
+        # Mixed case
+        mixed = ''.join(c.upper() if i % 2 else c.lower() 
+                       for i, c in enumerate(payload))
+        variations.add(mixed)
+        
+        return list(variations)
+    
+    @staticmethod
+    def _whitespace_injection(payload: str) -> List[str]:
+        """Inject whitespace variants"""
+        variations = set()
+        variations.add(" " + payload)
+        variations.add(payload + " ")
+        variations.add("\t" + payload)
+        variations.add(payload + "\t")
+        variations.add("\n" + payload)
+        variations.add(payload + "\n")
+        variations.add("\r\n" + payload)
+        variations.add(payload + "\r\n")
+        return list(variations)
+    
+    @staticmethod
+    def _comment_injection(payload: str) -> List[str]:
+        """Inject random comments"""
+        import random
+        variations = set()
+        
+        # SQL-style comments
+        if "--" in payload:
+            variations.add(payload.replace("--", "/*!*/--"))
+        
+        # HTML comments
+        if "<" in payload and ">" in payload:
+            parts = list(payload)
+            result = []
+            for c in parts:
+                result.append(c)
+                if random.random() > 0.7:
+                    result.append(f"<!--{random.randint(1000,9999)}-->")
+            variations.add(''.join(result))
+        
+        return list(variations)
+    
+    @staticmethod
+    def _nullbyte_injection(payload: str) -> str:
+        """Inject null bytes"""
+        return payload.replace("", "%00")
+    
+    @staticmethod
+    def _linebreak_injection(payload: str) -> str:
+        """Inject line breaks"""
+        return payload.replace("", "\n")
+    
+    @staticmethod
+    def _tab_injection(payload: str) -> str:
+        """Inject tabs"""
+        return payload.replace("", "\t")
     
     @staticmethod
     def get_payloads_for_type(vuln_type: str) -> List[str]:

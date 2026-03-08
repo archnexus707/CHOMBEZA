@@ -1,27 +1,44 @@
+# Core Requirements
 PyQt5>=5.15.0
 requests>=2.28.0
 beautifulsoup4>=4.11.0
 jinja2>=3.1.0
-markdown2>=2.4.0
 reportlab>=3.6.0
-matplotlib>=3.5.0
-numpy>=1.23.0
 Pillow>=9.0.0
 flask>=2.2.0
+flask-cors>=4.0.0
 pycryptodome>=3.15.0
 PySocks>=1.7.1
 urllib3>=1.26.0
 
-# --- Optional (screenshots / rendering backends) ---
-mss>=6.1.0
-pyscreenshot>=3.0
-pyautogui>=0.9.0
-pygetwindow>=0.0.9
+# Machine Learning (Optional)
+scikit-learn>=1.0.0
+numpy>=1.23.0
+pandas>=1.5.0
+
+# API Server
+gunicorn>=20.1.0  # For production API server
+
+# Screenshot backends
 selenium>=4.0.0
 playwright>=1.28.0
 requests-html>=0.10.0
 lxml>=4.9.0
-html5lib>=1.1
-img2pdf>=0.4.4
+
+# PDF Generation
 weasyprint>=60.0
 pdfkit>=1.0.0
+
+# WebSocket support
+websockets>=10.0
+websocket-client>=1.4.0
+
+# Async support
+aiohttp>=3.8.0
+asyncio>=3.4.3
+
+# Caching
+redis>=4.5.0  # Optional for distributed caching
+
+# Monitoring
+prometheus-client>=0.15.0  # For metrics

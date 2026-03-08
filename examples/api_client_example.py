@@ -430,12 +430,6 @@ class Scanner:
         self.state_file = None
         self.checkpoint_interval = self.config.get("checkpoint_interval", 100)
         
-        # Ensure scans directory exists
-        try:
-            os.makedirs("scans", exist_ok=True)
-        except:
-            pass
-        
         logger.info(f"Scanner initialized with {self.config.get('threads', 10)} threads")
         logger.info(f"Supported vulnerabilities: {len(SUPPORTED_VULNS)} types")
         if HAS_ML:
@@ -624,8 +618,7 @@ class Scanner:
         while self.running:
             try:
                 task = self.scan_queue.get(timeout=1)
-                if not self.paused:
-                    self._process_task(task, session)
+                self._process_task(task, session)
                 self.scan_queue.task_done()
                 
                 with self.vuln_lock:
@@ -805,7 +798,7 @@ class Scanner:
 
     def _check_xss(self, url, content, headers, status, response_time, params, data, 
                   original_value, request_response, request_id, resp):
-        """Check for XSS vulnerabilities"""
+        """Check for XSS vulnerabilities - Now with reflected, stored, DOM, blind"""
         payloads = self.payload_db.get_payloads("xss")
         
         for param, value in params.items():
@@ -846,7 +839,7 @@ class Scanner:
 
     def _check_sqli(self, url, content, headers, status, response_time, params, data,
                    original_value, request_response, request_id, resp):
-        """Check for SQL injection"""
+        """Check for SQL injection - Error based and Union based"""
         error_patterns = [
             ("SQL syntax", 90),
             ("mysql_fetch", 85),
@@ -878,7 +871,7 @@ class Scanner:
 
     def _check_sqli_blind(self, url, content, headers, status, response_time, params, data,
                          original_value, request_response, request_id, resp):
-        """Check for Blind SQL injection"""
+        """Check for Blind SQL injection - Boolean and Time based"""
         
         # Boolean-based blind
         true_payloads = ["' AND '1'='1", "1 AND 1=1", "' AND 1=1--"]
@@ -943,7 +936,7 @@ class Scanner:
 
     def _check_nosqli(self, url, content, headers, status, response_time, params, data,
                      original_value, request_response, request_id, resp):
-        """Check for NoSQL Injection"""
+        """Check for NoSQL Injection (MongoDB)"""
         nosqli_payloads = [
             "'[$ne]=1",
             "{\"$ne\": 1}",
@@ -959,6 +952,7 @@ class Scanner:
                 try:
                     test_resp = self.proxy_manager.get(test_url)
                     
+                    # Check for MongoDB errors
                     if test_resp:
                         mongo_errors = ["MongoError", "MongoDB", "unexpected token", "Unknown modifier"]
                         for error in mongo_errors:
@@ -1060,6 +1054,7 @@ class Scanner:
                   original_value, request_response, request_id, resp):
         """Check for JWT vulnerabilities"""
         
+        # Check if response contains JWT
         jwt_patterns = [
             r'eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+',
             r'Bearer\s+eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+'
@@ -1071,31 +1066,50 @@ class Scanner:
             found_jwts.extend(re.findall(pattern, content))
         
         if found_jwts:
-            for jwt_token in found_jwts[:5]:
+            for jwt_token in found_jwts[:5]:  # Limit to first 5
+                # Check for None algorithm
                 parts = jwt_token.split('.')
                 if len(parts) == 3:
-                    try:
-                        header = base64.b64decode(parts[0] + '==').decode('utf-8')
-                        if '"alg":"none"' in header or '"alg":"None"' in header:
-                            vuln_data = {
-                                "name": "JWT - None Algorithm",
-                                "severity": "critical",
-                                "url": url,
-                                "description": "JWT token accepts 'none' algorithm, allowing signature bypass.",
-                                "evidence": f"JWT Header: {header}\nToken: {jwt_token[:50]}...",
-                                "recommendation": "Disable 'none' algorithm, enforce signature verification",
-                                "confidence": 95,
-                                "request_response": request_response
-                            }
-                            self._add_vulnerability(**vuln_data, request_id=request_id)
-                            traffic_monitor.emit_vulnerability(request_id, vuln_data)
-                    except:
-                        pass
+                    header = base64.b64decode(parts[0] + '==').decode('utf-8')
+                    if '"alg":"none"' in header or '"alg":"None"' in header:
+                        vuln_data = {
+                            "name": "JWT - None Algorithm",
+                            "severity": "critical",
+                            "url": url,
+                            "description": "JWT token accepts 'none' algorithm, allowing signature bypass.",
+                            "evidence": f"JWT Header: {header}\nToken: {jwt_token[:50]}...",
+                            "recommendation": "Disable 'none' algorithm, enforce signature verification",
+                            "confidence": 95,
+                            "request_response": request_response
+                        }
+                        self._add_vulnerability(**vuln_data, request_id=request_id)
+                        traffic_monitor.emit_vulnerability(request_id, vuln_data)
 
     def _check_http_smuggling(self, url, content, headers, status, response_time, params, data,
                              original_value, request_response, request_id, resp):
         """Check for HTTP Request Smuggling"""
         
+        smuggling_payloads = [
+            {
+                'name': 'CL.TE',
+                'headers': {
+                    'Content-Length': '13',
+                    'Transfer-Encoding': 'chunked'
+                },
+                'body': '0\r\n\r\nGET /admin HTTP/1.1\r\nHost: localhost\r\n\r\n'
+            },
+            {
+                'name': 'TE.CL',
+                'headers': {
+                    'Content-Length': '4',
+                    'Transfer-Encoding': 'chunked'
+                },
+                'body': '5c\r\nGPOST / HTTP/1.1\r\nContent-Length: 15\r\n\r\nx=1\r\n0\r\n\r\n'
+            }
+        ]
+        
+        # This requires sending multiple requests and analyzing timing/responses
+        # Simplified detection - check for suspicious headers
         if 'Transfer-Encoding' in headers and 'Content-Length' in headers:
             te_value = headers.get('Transfer-Encoding', '').lower()
             if 'chunked' in te_value:
@@ -1122,11 +1136,12 @@ class Scanner:
         for header in cache_headers:
             if header in headers:
                 value = headers[header].lower()
-                if 'hit' in value or (value.isdigit() and int(value) > 0):
+                if 'hit' in value or value.isdigit() and int(value) > 0:
                     cache_hit = True
                     break
         
         if cache_hit:
+            # Test cache poisoning with unkeyed headers
             test_headers = {
                 'X-Forwarded-Host': 'evil.com',
                 'X-Forwarded-Scheme': 'http',
@@ -1172,6 +1187,7 @@ class Scanner:
             found_ids.extend(matches)
         
         for id_value in found_ids:
+            # Try to access other IDs
             try:
                 original_id = id_value
                 test_id = str(int(original_id) + 1)
@@ -1218,6 +1234,7 @@ class Scanner:
         }
         """
         
+        # Check if it's a GraphQL endpoint
         if '/graphql' in url or '/v1/graphql' in url or '/v2/graphql' in url:
             try:
                 json_data = {'query': introspection_query}
@@ -1245,6 +1262,14 @@ class Scanner:
                         original_value, request_response, request_id, resp):
         """Check for WebSocket vulnerabilities"""
         
+        websocket_headers = ['Upgrade', 'Connection', 'Sec-WebSocket-Key', 'Sec-WebSocket-Version']
+        has_websocket = False
+        
+        for header in websocket_headers:
+            if header in headers:
+                has_websocket = True
+                break
+        
         if 'Upgrade' in headers and headers['Upgrade'].lower() == 'websocket':
             vuln_data = {
                 "name": "WebSocket Endpoint Detected",
@@ -1271,7 +1296,7 @@ class Scanner:
         ]
         
         for param in params:
-            for payload in pollution_payloads[:2]:
+            for payload in pollution_payloads[:2]:  # Limit to avoid false positives
                 test_url = url.replace(f"{param}={params[param]}", f"{param}={payload}")
                 try:
                     test_resp = self.proxy_manager.get(test_url)
@@ -1301,6 +1326,7 @@ class Scanner:
                              original_value, request_response, request_id, resp):
         """Check for Race Conditions"""
         
+        # Look for race condition indicators in forms/endpoints
         race_indicators = ['transfer', 'checkout', 'purchase', 'order', 'balance', 'coupon', 'redeem']
         
         for indicator in race_indicators:
@@ -1324,12 +1350,12 @@ class Scanner:
         """Check for Insecure Deserialization"""
         
         deserialization_patterns = [
-            (r'O:\d+:"[^"]+":\d+:{', 'PHP', 85),
-            (r'[^-]rO0', 'Java', 80),
-            (r'\xac\xed\x00\x05', 'Java', 95),
-            (r'!\x94\x01\x00\x03', 'Python', 85),
-            (r'\x04\x08\x05\x08', 'Python', 85),
-            (r'\x80\x04\x95', 'Python', 85),
+            (r'O:\d+:"[^"]+":\d+:{', 'PHP', 85),  # PHP
+            (r'[^-]rO0', 'Java', 80),             # Java (base64 encoded)
+            (r'\xac\xed\x00\x05', 'Java', 95),    # Java serialized
+            (r'!\x94\x01\x00\x03', 'Python', 85), # Python pickle
+            (r'\x04\x08\x05\x08', 'Python', 85),  # Python pickle
+            (r'\x80\x04\x95', 'Python', 85),      # Python pickle (protocol 4)
         ]
         
         import re
@@ -1622,7 +1648,7 @@ class Scanner:
                 self._add_vulnerability(**vuln_data, request_id=request_id)
                 traffic_monitor.emit_vulnerability(request_id, vuln_data)
 
-    # Placeholder methods
+    # Placeholder methods for remaining vulnerability types
     def _check_privilege_escalation(self, *args, **kwargs): pass
     def _check_broken_access(self, *args, **kwargs): pass
     def _check_mass_assignment(self, *args, **kwargs): pass
@@ -1638,12 +1664,14 @@ class Scanner:
                           evidence: str, recommendation: str, parameter: str = None,
                           confidence: int = 100, request_response: str = None, 
                           request_id: str = None):
-        """Add a vulnerability with thread safety and ML validation"""
+        """Add a vulnerability with thread safety, screenshot support, and ML validation"""
         
+        # ML false positive reduction
         ml_confidence = None
         ml_classification = None
         
         if HAS_ML and self.ml_reducer and self.ml_reducer.is_trained:
+            # Create temporary finding dict for ML prediction
             finding_dict = {
                 "name": name,
                 "severity": severity,
@@ -1658,6 +1686,7 @@ class Scanner:
             ml_confidence = probability
             ml_classification = classification
             
+            # If classified as false positive with high confidence, skip
             threshold = self.config.get("ml_threshold", 0.7)
             if classification == "false_positive" and probability > threshold:
                 logger.debug(f"ML filtered false positive: {name} at {url} (confidence: {probability:.2f})")
@@ -1683,15 +1712,23 @@ class Scanner:
         if self.config.get("screenshot", True) and HAS_SCREENSHOT:
             try:
                 from core.screenshot import screenshot_capturer
+                logger.info(f"Attempting to capture screenshot for: {url}")
+                
                 screenshot_data = screenshot_capturer.capture_url(
                     url, 
                     caption=f"Vulnerability: {name}"
                 )
                 if screenshot_data and screenshot_data.get('data'):
                     vuln.add_screenshot(screenshot_data)
+                    logger.info(f"Screenshot captured for {name} at {url}")
+                else:
+                    logger.warning(f"No screenshot data received for {url}")
             except Exception as e:
                 logger.error(f"Screenshot capture failed: {e}")
+                import traceback
+                logger.debug(traceback.format_exc())
         
+        # FIXED: Thread-safe vulnerability addition
         with self.vuln_lock:
             self.vulnerabilities.append(vuln)
         
@@ -1701,6 +1738,7 @@ class Scanner:
             
         logger.info(f"[{severity.upper()}] {name} at {url}")
         
+        # Emit vulnerability for traffic monitor
         traffic_monitor.emit_vulnerability(request_id or vuln.request_id, vuln.to_dict())
 
     def _get_static_content(self, url: str) -> str:
@@ -1723,6 +1761,7 @@ class Scanner:
         self.paused = False
         self.start_time = time.time()
         
+        # Clear previous scan data with locks
         with self.vuln_lock:
             self.vulnerabilities.clear()
         
@@ -1786,6 +1825,7 @@ class Scanner:
                                                    self.config.get("mutations_per_payload", 5))
             
             for param in params:
+                # Smart parameter mapping
                 if self.config.get("smart_fuzz", True):
                     param_types = self.get_parameter_type(param)
                     vuln_types_to_test = [v for v in param_types if v in enabled_vulns]
@@ -1801,7 +1841,7 @@ class Scanner:
                             payload, 
                             max_mutations=mutations_per_payload
                         )
-                        for mutated in mutations[:3]:
+                        for mutated in mutations[:3]:  # Limit to 3 mutations per payload
                             encoded_payload = quote(mutated)
                             test_url = f"{self.target}?{param}={encoded_payload}"
                             
@@ -1835,6 +1875,7 @@ class Scanner:
                     continue
                 
                 for param_name in form_params:
+                    # Smart parameter mapping for forms
                     if self.config.get("smart_fuzz", True):
                         param_types = self.get_parameter_type(param_name)
                         vuln_types_to_test = [v for v in param_types if v in enabled_vulns]
@@ -1862,9 +1903,10 @@ class Scanner:
             logger.error(f"Parameter discovery failed: {e}", exc_info=True)
 
     def stop_scan(self):
-        """Stop the scanning process"""
+        """Stop the scanning process - FIXED: Proper queue draining"""
         self.running = False
         
+        # FIXED: Clear the queue
         while not self.scan_queue.empty():
             try:
                 self.scan_queue.get_nowait()
@@ -1878,11 +1920,8 @@ class Scanner:
         self.threads.clear()
         self.end_time = time.time()
         
-        # Save final state with error handling
-        try:
-            self._save_state()
-        except Exception as e:
-            logger.error(f"Failed to save final state: {e}")
+        # Save final state
+        self._save_state()
         
         logger.info("Scan stopped")
 
@@ -1904,39 +1943,26 @@ class Scanner:
         if not HAS_STATE or not self.state_manager:
             return
         
-        try:
-            if not self.state_file and self.target:
-                # Create safe filename - remove invalid characters
-                timestamp = int(time.time())
-                # Replace invalid filename characters
-                safe_target = self.target.replace('://', '_').replace('/', '_').replace('\\', '_')
-                safe_target = safe_target.replace('?', '_').replace('=', '_').replace('&', '_')
-                safe_target = safe_target.replace(':', '_').replace('*', '_').replace('"', '_')
-                safe_target = safe_target.replace('<', '_').replace('>', '_').replace('|', '_')
-                safe_target = safe_target[:50]  # Limit length
-                
-                # Ensure scans directory exists
-                os.makedirs("scans", exist_ok=True)
-                self.state_file = f"scans/scan_{safe_target}_{timestamp}.json"
-            
-            if self.state_file:
-                state = ScanState(
-                    target=self.target,
-                    scan_type=self.scan_type,
-                    start_time=self.start_time or time.time(),
-                    completed_tasks=self.completed_tasks,
-                    total_tasks=self.total_tasks,
-                    stats=self.stats.copy(),
-                    vulnerabilities=[v.to_dict() for v in self.vulnerabilities],
-                    scanned_urls=list(self.scanned_urls),
-                    config=self.config.copy(),
-                    queue_snapshot=[]  # Queue can't be easily serialized
-                )
-                self.state_manager.save_state(state, os.path.basename(self.state_file))
-                logger.debug(f"Scan state saved to {self.state_file}")
-        except Exception as e:
-            logger.error(f"Failed to save scan state: {e}")
-            # Don't let state saving crash the scan
+        if not self.state_file and self.target:
+            timestamp = int(time.time())
+            safe_target = self.target.replace('://', '_').replace('/', '_').replace(':', '_')[:50]
+            self.state_file = f"scans/scan_{safe_target}_{timestamp}.json"
+            os.makedirs("scans", exist_ok=True)
+        
+        if self.state_file:
+            state = ScanState(
+                target=self.target,
+                scan_type=self.scan_type,
+                start_time=self.start_time or time.time(),
+                completed_tasks=self.completed_tasks,
+                total_tasks=self.total_tasks,
+                stats=self.stats.copy(),
+                vulnerabilities=[v.to_dict() for v in self.vulnerabilities],
+                scanned_urls=list(self.scanned_urls),
+                config=self.config.copy(),
+                queue_snapshot=[]  # Queue can't be easily serialized
+            )
+            self.state_manager.save_state(state, os.path.basename(self.state_file))
 
     def load_state(self, state_file: str) -> bool:
         """Load scan state from file"""
@@ -2045,4 +2071,4 @@ class Scanner:
             return "✅ No vulnerabilities found. Good security posture!"
 
 # For backward compatibility
-Scanner = Scanner
+Scanner

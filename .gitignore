@@ -30,9 +30,11 @@ dist/
 build/
 
 # Installer output (the large setup.exe)
+installer/
 installer_output/
 *.exe
 *.msi
+!chombeza_installer.iss
 
 # Reports and user data
 reports/
@@ -43,6 +45,8 @@ reports/
 logs/
 *.log
 install_errors.log
+scans/
+ml_models/
 
 # IDE
 .vscode/
@@ -61,16 +65,6 @@ unistall.bat
 unistall.sh
 toon.jpg
 
-# Project specific - KEEP these (for developers)
-!install.bat
-!install.sh
-!uninstall.bat
-!uninstall.sh
-!config.json
-!README.md
-!requirements.txt
-!favicon2.ico
-
 # Virtual Environment (but don't delete, just ignore)
 venv/
 env/
@@ -78,3 +72,26 @@ env/
 # Database
 *.db
 *.sqlite3
+
+# Config files with potential secrets
+config.json
+!config.json.example
+
+# Large binary assets
+*.jpg
+*.jpeg
+*.png
+*.gif
+!favicon2.ico
+
+# Specific JPG file (add this if you want to ignore that specific file)
+b450cbf1-f020-4104-990e-2111e8c9e69e.jpg
+
+# Project specific - KEEP these (for developers)
+!install.bat
+!install.sh
+!uninstall.bat
+!uninstall.sh
+!README.md
+!requirements.txt
+!favicon2.ico

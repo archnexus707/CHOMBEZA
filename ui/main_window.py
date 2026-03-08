@@ -8,6 +8,8 @@ import base64
 import hashlib
 import logging
 import traceback
+from pathlib import Path
+from datetime import datetime
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
     QPushButton, QTabWidget, QGroupBox, QCheckBox, QComboBox, QSpinBox,
@@ -18,9 +20,14 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QObject, QTimer, QSize, QRect, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QIcon, QFont, QColor, QPalette, QPainter, QLinearGradient, QPen, QBrush, QPixmap, QMovie
-from core.scanner import Scanner
+
+# Import scanner with ML support
+from core.scanner import Scanner, Vulnerability
 from core.report import ReportGenerator
 from core.blind_xss import BlindXSSServer
+from core.state import get_state_manager
+from core.ml_fp_reducer import get_ml_reducer
+
 from ui.styles import NeonStyles, CyberStyles, MatrixStyles
 from ui.widgets import (
     GlitchLabel, NeonButton, RainbowBorder, ScanProgress, ConsoleOutput,
@@ -38,6 +45,7 @@ class ScannerThread(QObject):
     scan_finished = pyqtSignal(dict)
     vulnerability_found = pyqtSignal(dict)
     update_status = pyqtSignal(str)
+    ml_feedback_ready = pyqtSignal(dict)
 
     def __init__(self, scanner):
         super().__init__()
@@ -129,6 +137,8 @@ class MainWindow(QMainWindow):
         self.scanner = Scanner(config_path='config.json' if os.path.exists('config.json') else None)
         self.blind_xss_server = BlindXSSServer(self.config.get("blind_xss_port", 5000))
         self.blind_xss_thread = BlindXSSThread(self.blind_xss_server)
+        self.state_manager = get_state_manager()
+        self.ml_reducer = get_ml_reducer()
         
         # Thread management
         self.scanner_thread = None
@@ -150,6 +160,9 @@ class MainWindow(QMainWindow):
         # Live traffic window
         self.traffic_window = None
         self._setup_traffic_monitoring()
+
+        # Load ML model status
+        self._update_ml_status()
 
     def _load_config(self):
         """Load configuration from file"""
@@ -390,7 +403,9 @@ class MainWindow(QMainWindow):
             grid = QGridLayout()
             for i, vuln in enumerate(vulns):
                 cb = AnimatedCheckBox(vuln)
-                cb.setChecked(self.config.get("features", {}).get(vuln.lower().replace(" ", "_"), True))
+                # Check if feature exists in config, default to True
+                feature_key = vuln.lower().replace(" ", "_")
+                cb.setChecked(self.config.get("features", {}).get(feature_key, True))
                 self.vuln_checkboxes[vuln] = cb
                 grid.addWidget(cb, i // 4, i % 4)
             vuln_layout.addLayout(grid)
@@ -423,6 +438,26 @@ class MainWindow(QMainWindow):
         control_group.setLayout(control_layout)
         layout.addWidget(control_group)
 
+        # Scan State Management
+        state_group = QGroupBox("💾 SCAN STATE MANAGEMENT")
+        state_layout = QHBoxLayout()
+        
+        self.save_state_btn = NeonButton("💾 Save State")
+        self.save_state_btn.clicked.connect(self._save_scan_state)
+        state_layout.addWidget(self.save_state_btn)
+        
+        self.load_state_btn = NeonButton("📂 Load State")
+        self.load_state_btn.clicked.connect(self._load_scan_state)
+        state_layout.addWidget(self.load_state_btn)
+        
+        self.resume_scan_btn = NeonButton("▶ Resume Scan")
+        self.resume_scan_btn.clicked.connect(self._resume_scan)
+        self.resume_scan_btn.setEnabled(False)
+        state_layout.addWidget(self.resume_scan_btn)
+        
+        state_group.setLayout(state_layout)
+        layout.addWidget(state_group)
+
         # Action buttons
         button_layout = QHBoxLayout()
         button_layout.setSpacing(20)
@@ -449,7 +484,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(scroll, "🔍 HUNT")
 
     def _setup_results_tab(self):
-        """Setup the results tab"""
+        """Setup the results tab with ML feedback integration"""
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("QScrollArea { border: none; background: transparent; }")
@@ -521,6 +556,51 @@ class MainWindow(QMainWindow):
         stats_group.setLayout(stats_layout)
         layout.addWidget(stats_group)
 
+        # ML False Positive Reduction Section
+        ml_group = QGroupBox("🤖 ML FALSE POSITIVE REDUCTION")
+        ml_layout = QVBoxLayout()
+
+        ml_status = QHBoxLayout()
+        ml_status.addWidget(QLabel("Model Status:"))
+        self.ml_status_label = QLabel("Not Trained")
+        self.ml_status_label.setStyleSheet("color: #ffaa00; font-weight: bold;")
+        ml_status.addWidget(self.ml_status_label)
+        ml_status.addStretch()
+        ml_layout.addLayout(ml_status)
+
+        # Training stats
+        ml_stats = QHBoxLayout()
+        ml_stats.addWidget(QLabel("Training Samples:"))
+        self.ml_samples_label = QLabel("0")
+        ml_stats.addWidget(self.ml_samples_label)
+        ml_stats.addWidget(QLabel("Accuracy:"))
+        self.ml_accuracy_label = QLabel("N/A")
+        ml_stats.addWidget(self.ml_accuracy_label)
+        ml_stats.addStretch()
+        ml_layout.addLayout(ml_stats)
+
+        # Train button
+        self.train_ml_btn = QPushButton("🎯 Train Model")
+        self.train_ml_btn.clicked.connect(self._train_ml_model)
+        ml_layout.addWidget(self.train_ml_btn)
+
+        # Confidence threshold
+        threshold_layout = QHBoxLayout()
+        threshold_layout.addWidget(QLabel("Confidence Threshold:"))
+        self.ml_threshold = QSlider(Qt.Horizontal)
+        self.ml_threshold.setRange(50, 95)
+        self.ml_threshold.setValue(int(self.config.get("ml_threshold", 70) * 100))
+        self.ml_threshold.setTickInterval(5)
+        self.ml_threshold.setTickPosition(QSlider.TicksBelow)
+        self.ml_threshold.valueChanged.connect(self._update_ml_threshold)
+        threshold_layout.addWidget(self.ml_threshold)
+        self.ml_threshold_label = QLabel(f"{self.ml_threshold.value()}%")
+        threshold_layout.addWidget(self.ml_threshold_label)
+        ml_layout.addLayout(threshold_layout)
+
+        ml_group.setLayout(ml_layout)
+        layout.addWidget(ml_group)
+
         # Vulnerability tree with filtering
         tree_group = QGroupBox("🔍 VULNERABILITIES FOUND")
         tree_layout = QVBoxLayout()
@@ -556,12 +636,13 @@ class MainWindow(QMainWindow):
         
         # Tree widget
         self.vuln_tree = QTreeWidget()
-        self.vuln_tree.setHeaderLabels(["Severity", "Name", "URL", "Parameter", "Confidence"])
+        self.vuln_tree.setHeaderLabels(["Severity", "Name", "URL", "Parameter", "Confidence", "ML Status"])
         self.vuln_tree.setColumnWidth(0, 100)
         self.vuln_tree.setColumnWidth(1, 200)
         self.vuln_tree.setColumnWidth(2, 300)
         self.vuln_tree.setColumnWidth(3, 150)
         self.vuln_tree.setColumnWidth(4, 100)
+        self.vuln_tree.setColumnWidth(5, 100)
         self.vuln_tree.setAlternatingRowColors(True)
         self.vuln_tree.setMinimumHeight(200)
         self.vuln_tree.setStyleSheet("""
@@ -595,7 +676,7 @@ class MainWindow(QMainWindow):
         tree_group.setLayout(tree_layout)
         layout.addWidget(tree_group)
 
-        # Vulnerability details
+        # Vulnerability details with ML feedback
         details_group = QGroupBox("📝 VULNERABILITY DETAILS")
         details_layout = QVBoxLayout()
         
@@ -613,6 +694,22 @@ class MainWindow(QMainWindow):
             }
         """)
         details_layout.addWidget(self.vuln_details)
+        
+        # ML Feedback Buttons
+        feedback_layout = QHBoxLayout()
+        feedback_layout.addWidget(QLabel("Provide Feedback:"))
+        
+        self.true_positive_btn = QPushButton("✅ True Positive")
+        self.true_positive_btn.clicked.connect(lambda: self._send_ml_feedback(True))
+        self.true_positive_btn.setEnabled(False)
+        feedback_layout.addWidget(self.true_positive_btn)
+        
+        self.false_positive_btn = QPushButton("❌ False Positive")
+        self.false_positive_btn.clicked.connect(lambda: self._send_ml_feedback(False))
+        self.false_positive_btn.setEnabled(False)
+        feedback_layout.addWidget(self.false_positive_btn)
+        
+        details_layout.addLayout(feedback_layout)
         
         details_group.setLayout(details_layout)
         layout.addWidget(details_group)
@@ -759,7 +856,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(scroll, "🎯 BLIND XSS")
 
     def _setup_payload_lab_tab(self):
-        """Setup the payload lab tab with clear button"""
+        """Setup the payload lab tab"""
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         
@@ -888,7 +985,7 @@ class MainWindow(QMainWindow):
         self.save_payload_btn.clicked.connect(self._save_payload)
         payload_buttons.addWidget(self.save_payload_btn)
 
-        # NEW: Clear Payloads Button
+        # Clear Payloads Button
         self.clear_payloads_btn = QPushButton("🗑️ Clear All")
         self.clear_payloads_btn.setStyleSheet("""
             QPushButton {
@@ -988,6 +1085,23 @@ class MainWindow(QMainWindow):
         advanced_group.setLayout(advanced_layout)
         layout.addWidget(advanced_group)
 
+        # ML Settings
+        ml_settings_group = QGroupBox("🤖 MACHINE LEARNING SETTINGS")
+        ml_settings_layout = QFormLayout()
+
+        self.ml_enabled = AnimatedCheckBox("Enable ML False Positive Reduction")
+        self.ml_enabled.setChecked(self.config.get("ml_enabled", True))
+        ml_settings_layout.addRow("", self.ml_enabled)
+
+        self.ml_threshold_spin = QSpinBox()
+        self.ml_threshold_spin.setRange(50, 95)
+        self.ml_threshold_spin.setValue(int(self.config.get("ml_threshold", 70) * 100))
+        self.ml_threshold_spin.setSuffix("%")
+        ml_settings_layout.addRow("Confidence Threshold:", self.ml_threshold_spin)
+
+        ml_settings_group.setLayout(ml_settings_layout)
+        layout.addWidget(ml_settings_group)
+
         # Features
         features_group = QGroupBox("🎯 FEATURES")
         features_layout = QVBoxLayout()
@@ -1001,7 +1115,7 @@ class MainWindow(QMainWindow):
         features_layout.addWidget(self.screenshot_cb)
 
         self.smart_fuzz_cb = AnimatedCheckBox("Smart fuzzing (AI-powered)")
-        self.smart_fuzz_cb.setChecked(self.config.get("smart_fuzz", False))
+        self.smart_fuzz_cb.setChecked(self.config.get("smart_fuzz", True))
         features_layout.addWidget(self.smart_fuzz_cb)
 
         self.evasion_cb = AnimatedCheckBox("WAF evasion techniques")
@@ -1010,6 +1124,7 @@ class MainWindow(QMainWindow):
 
         features_group.setLayout(features_layout)
         layout.addWidget(features_group)
+
         # Authentication
         auth_group = QGroupBox("🔐 AUTHENTICATION")
         auth_layout = QFormLayout()
@@ -1058,7 +1173,6 @@ class MainWindow(QMainWindow):
 
         auth_group.setLayout(auth_layout)
         layout.addWidget(auth_group)
-
 
         # Save button
         self.save_settings = NeonButton("💾 SAVE SETTINGS")
@@ -1140,6 +1254,24 @@ class MainWindow(QMainWindow):
         if self.scan_button.isEnabled():
             self.status_label.setText(random.choice(statuses))
 
+    def _update_ml_status(self):
+        """Update ML model status display"""
+        if hasattr(self.scanner, 'ml_reducer') and self.scanner.ml_reducer:
+            if self.scanner.ml_reducer.is_trained:
+                self.ml_status_label.setText("Trained")
+                self.ml_status_label.setStyleSheet("color: #00ff00; font-weight: bold;")
+                
+                stats = self.scanner.ml_reducer.get_stats()
+                self.ml_samples_label.setText(str(stats['training_samples']))
+            else:
+                self.ml_status_label.setText("Not Trained")
+                self.ml_status_label.setStyleSheet("color: #ffaa00; font-weight: bold;")
+
+    def _update_ml_threshold(self, value):
+        """Update ML threshold label"""
+        self.ml_threshold_label.setText(f"{value}%")
+        self.config["ml_threshold"] = value / 100.0
+
     def toggle_fullscreen(self):
         """Toggle fullscreen mode"""
         if self.is_maximized:
@@ -1193,6 +1325,8 @@ class MainWindow(QMainWindow):
         self.config["threads"] = self.threads_spin.value()
         self.config["delay"] = self.delay_spin.value()
         self.config["timeout"] = self.timeout_spin.value()
+        self.config["ml_threshold"] = self.ml_threshold.value() / 100.0
+        
         # Authentication settings
         self.config["auth"] = {
             "enabled": bool(getattr(self, "auth_enabled", None).isChecked()) if hasattr(self, "auth_enabled") else False,
@@ -1205,8 +1339,7 @@ class MainWindow(QMainWindow):
             "password_field": getattr(self, "auth_pass_field", None).text().strip() if hasattr(self, "auth_pass_field") else "",
         }
 
-
-        # Apply runtime config to scanner (so checkbox selections take effect immediately)
+        # Apply runtime config to scanner
         try:
             if getattr(self, "scanner", None):
                 # Merge top-level config and features
@@ -1215,16 +1348,21 @@ class MainWindow(QMainWindow):
                 self.scanner.config["threads"] = self.config.get("threads", self.scanner.config.get("threads", 10))
                 self.scanner.config["delay"] = self.config.get("delay", self.scanner.config.get("delay", 100))
                 self.scanner.config["timeout"] = self.config.get("timeout", self.scanner.config.get("timeout", 10))
+                self.scanner.config["ml_threshold"] = self.config.get("ml_threshold", 0.7)
+                
                 # Screenshot toggle from UI if present
                 if hasattr(self, "screenshot_cb"):
                     self.scanner.config["screenshot"] = bool(self.screenshot_cb.isChecked())
+                
+                # ML enabled toggle
+                if hasattr(self, "ml_enabled"):
+                    self.scanner.config["ml_enabled"] = bool(self.ml_enabled.isChecked())
         except Exception as e:
             logger.warning(f"Failed to apply UI config to scanner: {e}")
 
         # Persist config to disk
         with open("config.json", "w") as f:
             json.dump(self.config, f, indent=2)
-
 
         # Clean up previous thread if exists
         if self.scanner_thread and self.scanner_thread.isRunning():
@@ -1243,6 +1381,7 @@ class MainWindow(QMainWindow):
         self.scanner_worker.scan_finished.connect(self._scan_finished)
         self.scanner_worker.vulnerability_found.connect(self._add_vulnerability)
         self.scanner_worker.update_status.connect(self.status_label.setText)
+        self.scanner_worker.ml_feedback_ready.connect(self._update_ml_status)
 
         # Connect thread lifecycle
         self.scanner_thread.started.connect(self.scanner_worker.run_scan)
@@ -1254,6 +1393,8 @@ class MainWindow(QMainWindow):
         self.scan_button.setEnabled(False)
         self.stop_button.setEnabled(True)
         self.pause_button.setEnabled(True)
+        self.resume_scan_btn.setEnabled(False)
+        self.load_state_btn.setEnabled(False)
         self.progress.setValue(0)
         self.vuln_tree.clear()
         self.console.clear()
@@ -1272,6 +1413,9 @@ class MainWindow(QMainWindow):
         if self.scanner_thread:
             self.scanner_thread.deleteLater()
             self.scanner_thread = None
+        
+        # Re-enable state buttons
+        self.load_state_btn.setEnabled(True)
 
     def _stop_scan(self):
         """Stop the current scan"""
@@ -1284,6 +1428,7 @@ class MainWindow(QMainWindow):
         self.scan_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         self.pause_button.setEnabled(False)
+        self.load_state_btn.setEnabled(True)
 
     def _pause_scan(self):
         """Pause or resume the scan"""
@@ -1291,16 +1436,21 @@ class MainWindow(QMainWindow):
             self.pause_button.setText("▶ RESUME")
             if self.scanner_worker:
                 self.scanner_worker.running = False
+            if self.scanner:
+                self.scanner.pause_scan()
         else:
             self.pause_button.setText("⏸ PAUSE")
             if self.scanner_worker:
                 self.scanner_worker.running = True
+            if self.scanner:
+                self.scanner.resume_scan()
 
     def _scan_finished(self, report):
         """Handle scan completion"""
         self.scan_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         self.pause_button.setEnabled(False)
+        self.load_state_btn.setEnabled(True)
         self.progress.setValue(100)
 
         # Update stats
@@ -1310,12 +1460,23 @@ class MainWindow(QMainWindow):
         # Update vulnerability tree
         self.vuln_tree.clear()
         for vuln in self.scanner.vulnerabilities:
+            # Determine ML status display
+            ml_status = ""
+            if hasattr(vuln, 'ml_classification') and vuln.ml_classification:
+                if vuln.ml_classification == "true_positive":
+                    ml_status = "✅ TP"
+                elif vuln.ml_classification == "false_positive":
+                    ml_status = "❌ FP"
+                elif vuln.ml_classification == "uncertain":
+                    ml_status = "❓ Uncertain"
+            
             item = QTreeWidgetItem([
                 vuln.severity.capitalize(),
                 vuln.name,
                 vuln.url,
                 getattr(vuln, 'parameter', 'N/A'),
-                f"{getattr(vuln, 'confidence', 100)}%"
+                f"{getattr(vuln, 'confidence', 100)}%",
+                ml_status
             ])
             
             # Color by severity
@@ -1327,7 +1488,7 @@ class MainWindow(QMainWindow):
                 "info": QColor(0, 162, 255)
             }
             color = colors.get(vuln.severity, QColor(255, 255, 255))
-            for i in range(5):
+            for i in range(6):
                 item.setForeground(i, color)
             
             self.vuln_tree.addTopLevelItem(item)
@@ -1346,6 +1507,9 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Critical Findings", 
                                f"Found {self.scanner.stats['critical']} critical vulnerabilities!")
 
+        # Update ML status
+        self._update_ml_status()
+
         # Clean up thread
         if self.scanner_thread and self.scanner_thread.isRunning():
             self.scanner_thread.quit()
@@ -1361,9 +1525,11 @@ class MainWindow(QMainWindow):
                 label.setText(str(self.scanner.stats[key]))
 
     def _show_vuln_details(self):
-        """Show vulnerability details"""
+        """Show vulnerability details with ML feedback"""
         selected = self.vuln_tree.selectedItems()
         if not selected:
+            self.true_positive_btn.setEnabled(False)
+            self.false_positive_btn.setEnabled(False)
             return
 
         item = selected[0]
@@ -1373,6 +1539,11 @@ class MainWindow(QMainWindow):
         vuln = next((v for v in self.scanner.vulnerabilities 
                     if v.name == vuln_name and v.url == vuln_url), None)
         if vuln:
+            # Enable feedback buttons
+            self.true_positive_btn.setEnabled(True)
+            self.false_positive_btn.setEnabled(True)
+            self.current_finding = vuln
+            
             # Get parameter and confidence safely
             parameter = getattr(vuln, 'parameter', 'N/A')
             confidence = getattr(vuln, 'confidence', 100)
@@ -1439,7 +1610,22 @@ class MainWindow(QMainWindow):
                 <span class="label">📊 Confidence:</span><br>
                 {confidence}%
             </div>
+            """
             
+            # Add ML analysis if available
+            if hasattr(vuln, 'ml_confidence') and vuln.ml_confidence:
+                ml_color = '#00ff00' if vuln.ml_classification == 'true_positive' else '#ffaa00' if vuln.ml_classification == 'uncertain' else '#ff0000'
+                details += f'''
+                <div class="section">
+                    <span class="label">🤖 ML Analysis:</span><br>
+                    <div style="background: {ml_color}20; padding: 10px; border-left: 3px solid {ml_color};">
+                        <b>Classification:</b> {vuln.ml_classification}<br>
+                        <b>Confidence:</b> {vuln.ml_confidence:.1%}
+                    </div>
+                </div>
+                '''
+            
+            details += f"""
             <div class="section">
                 <span class="label">📝 Description:</span><br>
                 {vuln.description}
@@ -1473,6 +1659,47 @@ class MainWindow(QMainWindow):
                 '''
             
             self.vuln_details.setHtml(details)
+
+    def _send_ml_feedback(self, is_true_positive):
+        """Send feedback to ML reducer"""
+        if not hasattr(self, 'current_finding') or not self.current_finding:
+            return
+        
+        if hasattr(self.scanner, 'ml_reducer') and self.scanner.ml_reducer:
+            # Convert vulnerability to dict for ML
+            finding_dict = self.current_finding.to_dict()
+            self.scanner.ml_reducer.add_training_sample(finding_dict, is_true_positive)
+            
+            # Update UI
+            self.console.append_log(f"📊 ML Feedback recorded: {'True Positive' if is_true_positive else 'False Positive'}")
+            
+            # Disable buttons temporarily
+            self.true_positive_btn.setEnabled(False)
+            self.false_positive_btn.setEnabled(False)
+            
+            # Schedule re-enable after 2 seconds
+            QTimer.singleShot(2000, lambda: self.true_positive_btn.setEnabled(True))
+            QTimer.singleShot(2000, lambda: self.false_positive_btn.setEnabled(True))
+            
+            # Update tree item
+            self._update_vuln_tree_ml_status()
+
+    def _update_vuln_tree_ml_status(self):
+        """Update ML status in vulnerability tree"""
+        for i in range(self.vuln_tree.topLevelItemCount()):
+            item = self.vuln_tree.topLevelItem(i)
+            vuln_name = item.text(1)
+            vuln_url = item.text(2)
+            
+            vuln = next((v for v in self.scanner.vulnerabilities 
+                        if v.name == vuln_name and v.url == vuln_url), None)
+            if vuln and hasattr(vuln, 'ml_classification') and vuln.ml_classification:
+                if vuln.ml_classification == "true_positive":
+                    item.setText(5, "✅ TP")
+                elif vuln.ml_classification == "false_positive":
+                    item.setText(5, "❌ FP")
+                elif vuln.ml_classification == "uncertain":
+                    item.setText(5, "❓ Uncertain")
 
     def _filter_vuln_tree(self, severity):
         """Filter vulnerability tree by severity"""
@@ -1512,6 +1739,8 @@ class MainWindow(QMainWindow):
         self.config["screenshot"] = self.screenshot_cb.isChecked()
         self.config["smart_fuzz"] = self.smart_fuzz_cb.isChecked()
         self.config["evasion"] = self.evasion_cb.isChecked()
+        self.config["ml_enabled"] = self.ml_enabled.isChecked()
+        self.config["ml_threshold"] = self.ml_threshold_spin.value() / 100.0
 
         with open("config.json", 'w') as f:
             json.dump(self.config, f, indent=2)
@@ -1795,6 +2024,176 @@ class MainWindow(QMainWindow):
             
             self.console.append_log(f"⚠️ Payload history limited to {max_items} items")
 
+    def _save_scan_state(self):
+        """Manually save current scan state"""
+        if not self.scanner or not self.scanner.target:
+            QMessageBox.warning(self, "Error", "No active scan to save")
+            return
+        
+        if not hasattr(self.scanner, 'state_file') or not self.scanner.state_file:
+            # Ask user for location
+            timestamp = int(time.time())
+            safe_target = self.scanner.target.replace('://', '_').replace('/', '_').replace(':', '_')[:50]
+            default_name = f"scan_{safe_target}_{timestamp}.json"
+            
+            filename, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save Scan State",
+                f"scans/{default_name}",
+                "JSON Files (*.json)"
+            )
+            if filename:
+                self.scanner.state_file = filename
+                self.scanner._save_state()
+                QMessageBox.information(self, "Success", f"Scan state saved to {filename}")
+        else:
+            self.scanner._save_state()
+            QMessageBox.information(self, "Success", f"Scan state saved to {self.scanner.state_file}")
+
+    def _load_scan_state(self):
+        """Load a previously saved scan state"""
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load Scan State",
+            "scans/",
+            "JSON Files (*.json)"
+        )
+        
+        if not filename:
+            return
+        
+        if self.scanner.load_state(filename):
+            # Update UI with loaded state
+            self.target_input.setText(self.scanner.target)
+            
+            # Update scan type combo
+            scan_type_display = next(
+                (k for k, v in self.scan_types.items() if v == self.scanner.scan_type),
+                "⚡ Quick Scan"
+            )
+            self.scan_type_combo.setCurrentText(scan_type_display)
+            
+            # Update stats
+            for key, label in self.stats_labels.items():
+                if key in self.scanner.stats:
+                    label.setText(str(self.scanner.stats[key]))
+            
+            # Update vulnerability tree
+            self.vuln_tree.clear()
+            for vuln in self.scanner.vulnerabilities:
+                ml_status = ""
+                if hasattr(vuln, 'ml_classification') and vuln.ml_classification:
+                    if vuln.ml_classification == "true_positive":
+                        ml_status = "✅ TP"
+                    elif vuln.ml_classification == "false_positive":
+                        ml_status = "❌ FP"
+                    elif vuln.ml_classification == "uncertain":
+                        ml_status = "❓ Uncertain"
+                
+                item = QTreeWidgetItem([
+                    vuln.severity.capitalize(),
+                    vuln.name,
+                    vuln.url,
+                    getattr(vuln, 'parameter', 'N/A'),
+                    f"{getattr(vuln, 'confidence', 100)}%",
+                    ml_status
+                ])
+                
+                # Color by severity
+                colors = {
+                    "critical": QColor(255, 0, 0),
+                    "high": QColor(255, 100, 0),
+                    "medium": QColor(255, 200, 0),
+                    "low": QColor(0, 255, 0),
+                    "info": QColor(0, 162, 255)
+                }
+                color = colors.get(vuln.severity, QColor(255, 255, 255))
+                for i in range(6):
+                    item.setForeground(i, color)
+                
+                self.vuln_tree.addTopLevelItem(item)
+            
+            # Enable resume button
+            self.resume_scan_btn.setEnabled(True)
+            
+            # Update progress
+            progress = self.scanner.get_progress()
+            self.progress.setValue(int(progress))
+            
+            self.console.append_log(f"✅ Scan state loaded from {filename}")
+            self.console.append_log(f"📊 Progress: {progress:.1f}% complete, {len(self.scanner.vulnerabilities)} vulnerabilities found")
+            
+            # Update ML status
+            self._update_ml_status()
+            
+        else:
+            QMessageBox.warning(self, "Error", f"Failed to load scan state from {filename}")
+
+    def _resume_scan(self):
+        """Resume a previously loaded scan"""
+        if not self.scanner or not self.scanner.state_file:
+            QMessageBox.warning(self, "Error", "No scan state loaded")
+            return
+        
+        # Check if scan is already complete
+        if self.scanner.get_progress() >= 100:
+            reply = QMessageBox.question(
+                self,
+                "Resume Scan",
+                "This scan appears to be complete. Do you want to start a new scan instead?",
+                QMessageBox.Yes | QMessageBox.No
+            )
+            if reply == QMessageBox.Yes:
+                self._start_scan()
+            return
+        
+        # Start scan from loaded state
+        self.scanner.running = True
+        self.scanner.paused = False
+        
+        # Setup scanner thread
+        self.scanner_thread = QThread()
+        self.scanner_worker = ScannerThread(self.scanner)
+        self.scanner_worker.moveToThread(self.scanner_thread)
+
+        # Connect signals
+        self.scanner_worker.update_progress.connect(self.progress.setValue)
+        self.scanner_worker.update_log.connect(self.console.append_log)
+        self.scanner_worker.scan_finished.connect(self._scan_finished)
+        self.scanner_worker.vulnerability_found.connect(self._add_vulnerability)
+        self.scanner_worker.update_status.connect(self.status_label.setText)
+
+        # Connect thread lifecycle
+        self.scanner_thread.started.connect(self.scanner_worker.run_scan)
+        self.scanner_thread.finished.connect(self._cleanup_thread)
+
+        self.scanner_thread.start()
+
+        # Update UI state
+        self.scan_button.setEnabled(False)
+        self.stop_button.setEnabled(True)
+        self.pause_button.setEnabled(True)
+        self.resume_scan_btn.setEnabled(False)
+        self.load_state_btn.setEnabled(False)
+        
+        self.console.append_log(f"▶ Resuming scan on {self.scanner.target} from saved state...")
+
+    def _train_ml_model(self):
+        """Train ML model with collected feedback"""
+        if hasattr(self.scanner, 'ml_reducer') and self.scanner.ml_reducer:
+            if self.scanner.ml_reducer.train():
+                self.ml_status_label.setText("Trained")
+                self.ml_status_label.setStyleSheet("color: #00ff00; font-weight: bold;")
+                
+                stats = self.scanner.ml_reducer.get_stats()
+                self.ml_samples_label.setText(str(stats['training_samples']))
+                
+                QMessageBox.information(self, "Success", "ML model trained successfully!")
+            else:
+                QMessageBox.warning(self, "Error", "Failed to train model. Need at least 10 samples.")
+        else:
+            QMessageBox.warning(self, "Error", "ML reducer not available")
+
     def _setup_traffic_monitoring(self):
         """Setup live traffic monitoring"""
         try:
@@ -1872,6 +2271,10 @@ class MainWindow(QMainWindow):
                 self.scanner_worker.stop_scan()
             self.scanner_thread.quit()
             self.scanner_thread.wait(3000)
+        
+        # Save ML model if trained
+        if hasattr(self.scanner, 'ml_reducer') and self.scanner.ml_reducer and self.scanner.ml_reducer.is_trained:
+            self.scanner.ml_reducer.save_model()
         
         event.accept()
 

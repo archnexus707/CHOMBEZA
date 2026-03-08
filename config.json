@@ -1,5 +1,5 @@
 {
-  "theme": "cyberpunk",
+  "theme": "matrix",
   "concurrency": 5,
   "rate_limit": 10,
   "proxy": "",
@@ -10,17 +10,39 @@
   "screenshot": true,
   "dark_mode": false,
   "color_blind": false,
+  "cache_size": 1000,
+  "checkpoint_interval": 100,
+  "mutations_per_payload": 5,
+  "ml_enabled": true,
+  "ml_threshold": 0.7,
   "quick_scan": {
     "threads": 3,
-    "depth": 1
+    "depth": 1,
+    "payloads_per_param": 5,
+    "mutations_per_payload": 3
   },
   "deep_scan": {
     "threads": 10,
-    "depth": 3
+    "depth": 3,
+    "payloads_per_param": 20,
+    "mutations_per_payload": 10
+  },
+  "stealth_scan": {
+    "threads": 3,
+    "depth": 3,
+    "payloads_per_param": 3,
+    "mutations_per_payload": 5,
+    "delay": 500
+  },
+  "aggressive_scan": {
+    "threads": 50,
+    "depth": 10,
+    "payloads_per_param": 50,
+    "mutations_per_payload": 20
   },
   "features": {
     "xss": false,
-    "sqli": false,
+    "sqli": true,
     "ssti": false,
     "lfi": false,
     "rce": false,
@@ -29,7 +51,7 @@
     "nosqli": false,
     "ldapi": false,
     "xpathi": false,
-    "jwt": true,
+    "jwt": false,
     "cors": false,
     "csp": false,
     "http_smuggling": false,
@@ -54,9 +76,9 @@
     "deserialization": false,
     "memory_corruption": false
   },
-  "threads": 1,
-  "delay": 97,
-  "timeout": 32,
+  "threads": 2,
+  "delay": 89,
+  "timeout": 29,
   "user_agent": "CHOMBEZA-Bug-Bounty-Pro",
   "retries": 3,
   "max_redirects": 5,

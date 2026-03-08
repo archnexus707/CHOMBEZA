@@ -7,14 +7,12 @@ import logging
 import os
 
 # --- UI scaling (Windows HiDPI) ---
-# Many Windows setups use 125–200% display scaling which can make PyQt UIs look huge.
-# We keep the UI at a comfortable size by disabling auto-scaling and allowing an override.
 os.environ.setdefault('QT_AUTO_SCREEN_SCALE_FACTOR', '0')
 os.environ.setdefault('QT_SCALE_FACTOR', os.getenv('CHOMBEZA_QT_SCALE', '1'))
 os.environ.setdefault('QT_FONT_DPI', '96')
 
 from PyQt5.QtWidgets import QApplication
-from PyQt5.QtCore import Qt  # FIXED: Missing import added
+from PyQt5.QtCore import Qt
 from ui.main_window import MainWindow
 from core.scanner import Scanner
 from core.report import ReportGenerator
@@ -30,21 +28,19 @@ logger = logging.getLogger("CHOMBEZA")
 def main_gui():
     """Launch the GUI application"""
     try:
-        # Must be set before QApplication is created (prevents Qt warning on Windows)
-                # Prefer a smaller, consistent UI on Windows; can be overridden via CHOMBEZA_QT_SCALE env var.
+        # High DPI settings
         if hasattr(Qt, 'AA_DisableHighDpiScaling'):
             QApplication.setAttribute(Qt.AA_DisableHighDpiScaling, True)
         if hasattr(Qt, 'AA_UseHighDpiPixmaps'):
             QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+            
         app = QApplication(sys.argv)
         app.setApplicationName("CHOMBEZA Bug Bounty Pro")
         app.setApplicationVersion("2.0")
         
-        
         window = MainWindow()
         window.show()
         
-        # Clean exit
         exit_code = app.exec_()
         sys.exit(exit_code)
     except Exception as e:
@@ -52,20 +48,21 @@ def main_gui():
         sys.exit(1)
 
 def main_cli():
-    """Command-line interface mode"""
+    """Command-line interface mode with ML support"""
     parser = argparse.ArgumentParser(
-        description="CHOMBEZA - Advanced Bug Bounty Hunting Tool",
+        description="CHOMBEZA - Advanced Bug Bounty Hunting Tool with ML False Positive Reduction",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
   python main.py https://example.com --scan-type deep --threads 20
   python main.py https://example.com --blind-xss --output report
-  python main.py https://example.com --scan-type quick --no-screenshot
+  python main.py https://example.com --scan-type quick --no-screenshot --ml-enabled
+  python main.py https://example.com --load-state scans/scan_state.json --resume
         """
     )
     
     # Required arguments
-    parser.add_argument("target", help="Target URL to scan (e.g., https://example.com)")
+    parser.add_argument("target", nargs="?", help="Target URL to scan (e.g., https://example.com)")
     
     # Scan options
     parser.add_argument("--scan-type", choices=["quick", "deep", "stealth", "aggressive"], 
@@ -92,6 +89,20 @@ Examples:
     parser.add_argument("--proxy", help="HTTP/SOCKS proxy (e.g., http://127.0.0.1:8080)")
     parser.add_argument("--user-agent", help="Custom User-Agent string")
     
+    # ML options
+    parser.add_argument("--ml-enabled", action="store_true",
+                       help="Enable ML false positive reduction")
+    parser.add_argument("--ml-threshold", type=float, default=0.7,
+                       help="ML confidence threshold (0.5-0.95, default: 0.7)")
+    parser.add_argument("--train-ml", action="store_true",
+                       help="Train ML model with existing feedback")
+    
+    # State management
+    parser.add_argument("--save-state", help="Save scan state to file")
+    parser.add_argument("--load-state", help="Load scan state from file")
+    parser.add_argument("--resume", action="store_true",
+                       help="Resume scan from loaded state")
+    
     # Vulnerability selection
     parser.add_argument("--vuln-types", nargs="+", 
                        choices=["xss", "sqli", "ssti", "lfi", "rce", "xxe", "ssrf",
@@ -102,6 +113,24 @@ Examples:
     parser.add_argument("--config", help="Path to custom config.json")
     
     args = parser.parse_args()
+
+    # Check if we're just training ML or need target
+    if args.train_ml:
+        from core.ml_fp_reducer import get_ml_reducer
+        ml_reducer = get_ml_reducer()
+        if ml_reducer.train():
+            print("[+] ML model trained successfully!")
+            stats = ml_reducer.get_stats()
+            print(f"[+] Training samples: {stats['training_samples']}")
+            sys.exit(0)
+        else:
+            print("[-] Failed to train model. Need at least 10 samples.")
+            sys.exit(1)
+
+    # Target is required for scanning
+    if not args.target and not args.load_state:
+        parser.print_help()
+        sys.exit(1)
 
     # Load configuration
     config_path = args.config if args.config else "config.json"
@@ -120,21 +149,36 @@ Examples:
         "delay": args.delay,
         "screenshot": not args.no_screenshot,
         "proxy": args.proxy or config.get("proxy", ""),
-        "user_agent": args.user_agent or config.get("user_agent", "CHOMBEZA/2.0")
+        "user_agent": args.user_agent or config.get("user_agent", "CHOMBEZA/2.0"),
+        "ml_enabled": args.ml_enabled,
+        "ml_threshold": args.ml_threshold
     })
 
     # Initialize scanner
     try:
         scanner = Scanner(config_path if os.path.exists(config_path) else None)
-        scanner.set_target(args.target)
-        scanner.set_scan_type(args.scan_type)
         
-        # Set vulnerability types
-        if "all" not in args.vuln_types:
-            features = {v: False for v in scanner.config.get("features", {})}
-            for v in args.vuln_types:
-                features[v] = True
-            scanner.config["features"] = features
+        # Load state if requested
+        if args.load_state:
+            if scanner.load_state(args.load_state):
+                print(f"[+] Loaded scan state from {args.load_state}")
+                if args.resume:
+                    print("[+] Resuming scan...")
+                else:
+                    print("[+] State loaded. Use --resume to continue scanning.")
+            else:
+                print(f"[-] Failed to load state from {args.load_state}")
+                sys.exit(1)
+        else:
+            scanner.set_target(args.target)
+            scanner.set_scan_type(args.scan_type)
+            
+            # Set vulnerability types
+            if "all" not in args.vuln_types:
+                features = {v: False for v in scanner.config.get("features", {})}
+                for v in args.vuln_types:
+                    features[v] = True
+                scanner.config["features"] = features
         
     except Exception as e:
         logger.critical(f"Failed to initialize scanner: {e}")
@@ -153,22 +197,38 @@ Examples:
         except Exception as e:
             logger.error(f"Failed to start blind XSS server: {e}")
 
-    print(f"\n[+] Starting {args.scan_type} scan on {args.target}")
-    print(f"[+] Threads: {args.threads} | Timeout: {args.timeout}s | Delay: {args.delay}ms")
+    # Save state file if requested
+    if args.save_state:
+        scanner.state_file = args.save_state
+
+    # Start or resume scan
+    if args.resume and args.load_state:
+        print(f"[+] Resuming scan from state...")
+        scanner.running = True
+    else:
+        print(f"\n[+] Starting {args.scan_type} scan on {args.target}")
+        print(f"[+] Threads: {args.threads} | Timeout: {args.timeout}s | Delay: {args.delay}ms")
+        if args.ml_enabled:
+            print(f"[+] ML False Positive Reduction: Enabled (threshold: {args.ml_threshold})")
+    
     print("[+] Scanning... (Ctrl+C to stop)\n")
 
     # Start scan
     try:
-        scanner.start_scan()
+        if args.resume and args.load_state:
+            # Resume from state
+            scanner.start_scan()  # This will continue from where it left off
+        else:
+            scanner.start_scan()
         
         # Monitor progress
-        total_tasks = scanner.scan_queue.qsize()
+        total_tasks = scanner.total_tasks
         completed = 0
         last_progress = -1
         
-        while scanner.running and scanner.scan_queue.qsize() > 0:
+        while scanner.running and (scanner.scan_queue.qsize() > 0 or scanner.completed_tasks < scanner.total_tasks):
             current_size = scanner.scan_queue.qsize()
-            completed = total_tasks - current_size if total_tasks > 0 else 0
+            completed = scanner.completed_tasks
             progress = (completed / total_tasks * 100) if total_tasks > 0 else 0
             
             # Update progress bar
@@ -176,14 +236,29 @@ Examples:
                 bar_length = 50
                 filled = int(bar_length * progress / 100)
                 bar = '█' * filled + '░' * (bar_length - filled)
-                print(f"\r[{bar}] {progress:.1f}% | Found: {scanner.stats['total']} vulns", 
+                
+                # Add ML stats if enabled
+                ml_info = ""
+                if scanner.ml_reducer and scanner.ml_reducer.is_trained:
+                    stats = scanner.ml_reducer.get_stats()
+                    ml_info = f" | ML: {stats['training_samples']} samples"
+                
+                print(f"\r[{bar}] {progress:.1f}% | Found: {scanner.stats['total']} vulns{ml_info}", 
                       end="", flush=True)
                 last_progress = int(progress)
+            
+            # Auto-save state periodically
+            if args.save_state and scanner.completed_tasks % 50 == 0:
+                scanner._save_state()
             
             time.sleep(0.5)
             
     except KeyboardInterrupt:
         print("\n\n[!] Scan interrupted by user")
+        if args.save_state:
+            scanner._save_state()
+            print(f"[+] Scan state saved to {scanner.state_file}")
+        
         scanner.stop_scan()
         
         # Show current results
@@ -214,7 +289,7 @@ Examples:
     
     # Final summary
     print(f"\n{'='*60}")
-    print(f"SCAN COMPLETE - {args.target}")
+    print(f"SCAN COMPLETE - {args.target if args.target else 'Resumed Scan'}")
     print(f"{'='*60}")
     print(f"Total vulnerabilities: {scanner.stats['total']}")
     print(f"  Critical: {scanner.stats.get('critical', 0)}")
@@ -222,7 +297,17 @@ Examples:
     print(f"  Medium:   {scanner.stats.get('medium', 0)}")
     print(f"  Low:      {scanner.stats.get('low', 0)}")
     print(f"  Info:     {scanner.stats.get('info', 0)}")
+    print(f"Requests made: {scanner.stats.get('requests', 0)}")
+    print(f"Cached responses: {scanner.stats.get('cached', 0)}")
     print(f"Duration: {scanner.get_duration()} seconds")
+    
+    if scanner.ml_reducer and scanner.ml_reducer.is_trained:
+        ml_stats = scanner.ml_reducer.get_stats()
+        print(f"\nML Statistics:")
+        print(f"  Training samples: {ml_stats['training_samples']}")
+        print(f"  Positive samples: {ml_stats.get('positive_samples', 0)}")
+        print(f"  Negative samples: {ml_stats.get('negative_samples', 0)}")
+    
     print(f"{'='*60}")
 
     # Stop blind XSS server
