@@ -32,4 +32,4 @@ agreement between you and Dickson Godwin Massawe for the CHOMBEZA software.
    By installing or using this software, you agree to be bound by this EULA.
 
 For inquiries: dicksonmassawe707@gmail.com
-GitHub: https://github.com/dkhacker707/chombeza
+GitHub: https://github.com/archnexus707/chombeza
