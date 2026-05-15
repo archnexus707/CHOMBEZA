@@ -1,0 +1,223 @@
+CHOMBEZA BUG BOUNTY PRO
+END USER LICENSE AGREEMENT (EULA)
+Version 5.0  -  Effective: 2026-05-15
+
+Copyright (c) 2026 Dickson Massawe (archnexus). All rights reserved.
+
+================================================================================
+IMPORTANT - READ CAREFULLY BEFORE INSTALLING OR USING THIS SOFTWARE.
+================================================================================
+
+This End-User License Agreement ("Agreement") is a binding legal contract
+between you (either an individual or a single legal entity, "Licensee") and
+Dickson Massawe ("Licensor") for the CHOMBEZA Bug Bounty Pro software
+product, including any associated media, printed materials, and electronic
+documentation (the "Software").
+
+By installing, copying, downloading, accessing, or otherwise using the
+Software, you agree to be bound by the terms of this Agreement. If you do
+not agree, do not install or use the Software, and remove any copies in
+your possession.
+
+--------------------------------------------------------------------------------
+1. DEFINITIONS
+--------------------------------------------------------------------------------
+
+   1.1 "Evaluation Period" means the thirty (30) calendar days commencing
+       on the first launch of the Software on a given machine.
+
+   1.2 "Licence Key" means the digitally-signed license file (.lic) issued
+       by the Licensor, cryptographically bound to one or more specific
+       machine fingerprints.
+
+   1.3 "Machine Fingerprint" means the deterministic identifier computed
+       by the Software from system hardware attributes (network adapter
+       address, hostname, processor identifier, BIOS / motherboard UUID
+       on Windows, machine-id on Linux). Used solely for licence binding.
+
+   1.4 "Authorised Target" means any computer system, network, or
+       application that the Licensee owns outright OR for which the
+       Licensee possesses explicit, written authorisation from the
+       legal owner to perform security testing.
+
+--------------------------------------------------------------------------------
+2. LICENCE GRANT
+--------------------------------------------------------------------------------
+
+   2.1 EVALUATION LICENCE. Subject to the terms below, the Licensor grants
+       the Licensee a non-exclusive, non-transferable, revocable licence
+       to install and use the Software during the Evaluation Period for
+       the sole purpose of evaluating its capabilities.
+
+   2.2 COMMERCIAL LICENCE. Continued use of the Software beyond the
+       Evaluation Period requires a Commercial Licence. Commercial Licences
+       are issued in two tiers:
+
+         (a) SINGLE: Authorises use on one (1) Machine Fingerprint.
+
+         (b) TEAM:   Authorises use on up to five (5) Machine Fingerprints.
+
+       Each tier is offered as either a Monthly subscription (30 days) or
+       an Annual subscription (365 days), commencing on the licence
+       issuance date. Commercial Licences are obtained by contacting the
+       Licensor (see Section 11).
+
+   2.3 LICENCE BINDING. Each Licence Key is cryptographically bound to
+       the Machine Fingerprint(s) supplied by the Licensee at the time of
+       issuance. The Software will refuse to operate on any machine whose
+       Fingerprint does not appear in the issued Licence Key.
+
+--------------------------------------------------------------------------------
+3. PERMITTED USE
+--------------------------------------------------------------------------------
+
+   3.1 The Software may be used solely against Authorised Targets.
+
+   3.2 The Licensee is solely responsible for ensuring that all uses of
+       the Software comply with applicable law, contractual obligations
+       (including bug bounty programme terms of service), and the
+       authorisation granted by the legal owner of the Authorised Target.
+
+--------------------------------------------------------------------------------
+4. PROHIBITED USE
+--------------------------------------------------------------------------------
+
+   The Licensee shall not:
+
+   4.1 Use the Software against any system, network, or application that
+       is not an Authorised Target. Unauthorised security testing is
+       unlawful in most jurisdictions and may incur civil or criminal
+       penalties for which the Licensee is solely liable.
+
+   4.2 Reverse engineer, decompile, disassemble, deobfuscate, or attempt
+       to derive the source code of any compiled component of the Software,
+       except to the extent expressly permitted by applicable law
+       notwithstanding this restriction.
+
+   4.3 Modify, patch, circumvent, or attempt to bypass the licence
+       verification, hardware binding, or trial expiry mechanisms.
+
+   4.4 Distribute, sublicense, rent, lease, lend, sell, transfer, or
+       otherwise make the Software or any Licence Key available to any
+       third party.
+
+   4.5 Use a Licence Key issued for one Machine Fingerprint on any other
+       machine, or share a Licence Key beyond the Machine Fingerprints to
+       which it is cryptographically bound.
+
+   4.6 Remove, alter, or obscure any copyright, trademark, or other
+       proprietary notices contained in the Software.
+
+   4.7 Use the Software to develop a competing product.
+
+--------------------------------------------------------------------------------
+5. INTELLECTUAL PROPERTY
+--------------------------------------------------------------------------------
+
+   The Software is licensed, not sold. The Licensor retains all right,
+   title, and interest in and to the Software, including all intellectual
+   property rights therein. No rights are granted to the Licensee other
+   than those expressly set forth in this Agreement.
+
+--------------------------------------------------------------------------------
+6. UPDATES AND SUPPORT
+--------------------------------------------------------------------------------
+
+   6.1 The Licensor may, at its sole discretion, provide updates,
+       enhancements, or bug fixes for the Software. Such updates, when
+       provided, become part of the Software and are governed by this
+       Agreement.
+
+   6.2 Technical support is provided on a best-effort basis to holders of
+       valid Commercial Licences. Evaluation users receive no guaranteed
+       support.
+
+--------------------------------------------------------------------------------
+7. DATA PRIVACY
+--------------------------------------------------------------------------------
+
+   7.1 The Software does not transmit Licensee-identifying data to the
+       Licensor by default. The optional AI Enhancement feature, when
+       enabled by the Licensee, transmits scan finding data to the
+       configured AI provider (Anthropic, OpenAI, DeepSeek, or a local
+       Ollama instance) under the terms of that provider's privacy policy.
+
+   7.2 The Licence Key contains the Licensee's name, email address, and
+       Machine Fingerprint(s) for the purpose of licence binding and
+       support correlation. This data is not transmitted by the Software
+       at runtime.
+
+--------------------------------------------------------------------------------
+8. DISCLAIMER OF WARRANTY
+--------------------------------------------------------------------------------
+
+   THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY
+   OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+   IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR
+   PURPOSE, AND NON-INFRINGEMENT. THE LICENSOR DOES NOT WARRANT THAT THE
+   SOFTWARE WILL BE ERROR-FREE, UNINTERRUPTED, OR FREE OF SECURITY
+   VULNERABILITIES, NOR THAT IT WILL DETECT EVERY VULNERABILITY PRESENT
+   IN ANY GIVEN TARGET.
+
+--------------------------------------------------------------------------------
+9. LIMITATION OF LIABILITY
+--------------------------------------------------------------------------------
+
+   TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL
+   THE LICENSOR BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL,
+   CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF PROFITS, REVENUE,
+   DATA, OR USE, ARISING OUT OF OR IN CONNECTION WITH THE USE OF OR
+   INABILITY TO USE THE SOFTWARE, WHETHER BASED ON CONTRACT, TORT,
+   NEGLIGENCE, STRICT LIABILITY, OR OTHERWISE, EVEN IF THE LICENSOR HAS
+   BEEN ADVISED OF THE POSSIBILITY OF SUCH DAMAGES. THE LICENSOR'S TOTAL
+   AGGREGATE LIABILITY UNDER THIS AGREEMENT SHALL NOT EXCEED THE
+   LICENCE FEES PAID BY THE LICENSEE IN THE TWELVE (12) MONTHS PRIOR TO
+   THE EVENT GIVING RISE TO THE CLAIM.
+
+--------------------------------------------------------------------------------
+10. TERMINATION
+--------------------------------------------------------------------------------
+
+   10.1 This Agreement is effective until terminated.
+
+   10.2 The Agreement terminates automatically and without notice if the
+        Licensee breaches any of its terms. Upon termination, the
+        Licensee shall cease all use of the Software and remove all
+        copies in its possession.
+
+   10.3 Sections 4 (Prohibited Use), 5 (Intellectual Property),
+        8 (Disclaimer), 9 (Limitation of Liability), and 11 (General)
+        survive termination.
+
+--------------------------------------------------------------------------------
+11. CONTACT AND LICENSING INQUIRIES
+--------------------------------------------------------------------------------
+
+   For commercial licensing, support, renewals, and all other inquiries:
+
+       Dickson Massawe (archnexus)
+       Email:  archnexus707@gmail.com
+       GitHub: https://github.com/archnexus707/chombeza
+
+--------------------------------------------------------------------------------
+12. GENERAL
+--------------------------------------------------------------------------------
+
+   12.1 ENTIRE AGREEMENT. This Agreement constitutes the entire agreement
+        between the parties concerning the Software and supersedes all
+        prior or contemporaneous agreements.
+
+   12.2 SEVERABILITY. If any provision of this Agreement is held
+        unenforceable, the remaining provisions shall continue in full
+        force and effect.
+
+   12.3 NO WAIVER. The failure of the Licensor to enforce any right or
+        provision of this Agreement shall not constitute a waiver of
+        such right or provision.
+
+   12.4 ASSIGNMENT. The Licensee may not assign or transfer this
+        Agreement without the prior written consent of the Licensor.
+
+================================================================================
+END OF AGREEMENT
+================================================================================
