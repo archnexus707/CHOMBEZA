@@ -4,13 +4,13 @@
   <h1>CHOMBEZA Bug Bounty Pro</h1>
   <p><strong>A cyberpunk-themed VAPT &amp; bug-bounty toolkit with resumable scans, a live findings feed, and a built-in Blind-XSS server.</strong></p>
 
-  [![Version](https://img.shields.io/badge/Version-2.4-0bf?style=for-the-badge)](https://github.com/archnexus707/chombeza)
+  [![Version](https://img.shields.io/badge/Version-5.0.0-0bf?style=for-the-badge)](https://github.com/archnexus707/chombeza/releases/latest)
   [![Python](https://img.shields.io/badge/Python-3.8%2B-blue?style=for-the-badge&logo=python&logoColor=white)](https://www.python.org)
   [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-ff2e88?style=for-the-badge)](#-installation)
   [![Status](https://img.shields.io/badge/Status-Active%20Development-00ff66?style=for-the-badge)](#-roadmap)
   [![License](https://img.shields.io/badge/License-Proprietary-red?style=for-the-badge)](LICENSE.txt)
 
-  <sub>Created by <b>Dickson Godwin Massawe</b> — <a href="https://github.com/archnexus707">@archnexus707</a></sub>
+  <sub>Created by <b>Dickson Massawe (archnexus)</b> — <a href="https://github.com/archnexus707">@archnexus707</a> — <a href="mailto:archnexus707@gmail.com">archnexus707@gmail.com</a></sub>
 </div>
 
 ---
@@ -21,12 +21,14 @@
 
 ## 📋 Table of Contents
 
+- [✨ What's new in 5.0](#-whats-new-in-50)
 - [✨ What's new in 2.4](#-whats-new-in-24)
 - [✨ What's new in 2.3](#-whats-new-in-23)
 - [✨ What's new in 2.2](#-whats-new-in-22)
 - [✨ What's new in 2.1](#-whats-new-in-21)
 - [🚀 Highlights](#-highlights)
 - [📥 Installation](#-installation)
+- [💼 Commercial Licensing](#-commercial-licensing)
 - [⚡ Quick Start](#-quick-start)
 - [📖 Full usage guide](USAGE.md) — workflows, mid-scan ops, bug-bounty scenarios, troubleshooting
 - [🖥️ The GUI, piece by piece](#️-the-gui-piece-by-piece)
@@ -47,6 +49,28 @@
 - [👨‍💻 Author](#-author)
 
 ---
+
+## ✨ What's new in 5.0
+
+The first commercial release. CHOMBEZA Bug Bounty Pro now ships as a polished Windows installer (`.exe`) and Linux package (`.deb`) with a 30-day evaluation licence and a full commercial activation flow. Major focus areas this release: source-code protection, licensing infrastructure, professional installer wizard, and the operational tooling needed to actually sell it.
+
+| Area | What changed |
+|---|---|
+| **30-day evaluation trial** | Every fresh install includes a 30-day trial. State is stored in two locations (HMAC-signed, hardware-bound, monotonic-clock-rollback-protected) so removing one doesn't reset the trial. After expiry, the application opens to an Activation Required dialog instead of the main scanner — never bricks. ([core/license.py](core/license.py)) |
+| **Ed25519 commercial licence keys** | Customers receive a `.lic` file signed with the author's private key. The shipped binary embeds only the public key — without the private key, no one can forge a valid licence (~2^128 work). Each licence is bound to one or more machine fingerprints (MAC + hostname + arch + BIOS UUID on Windows / machine-id on Linux). Copying the file to another machine produces a clear "wrong machine" rejection. ([core/license_keys.py](core/license_keys.py)) |
+| **Two subscription tiers** | **Monthly** (30 days) or **Annual** (365 days). Either tier can be issued as **Single** (1 machine) or **Team** (up to 5 machines). All four combinations are produced from the same issuer pipeline. |
+| **Customer activation paths** | Three ways to activate, all leading to the same place (`%APPDATA%\CHOMBEZA\license.lic` on Windows, equivalent on Linux/macOS): (a) Trial-expired Activation dialog with a Load Licence File button, (b) Tools menu → Import Licence File... for pre-paying customers on an active trial, (c) drop the file in the appdata folder manually. The app verifies signature + fingerprint + expiry before installing. |
+| **Show Machine Fingerprint** | Customers retrieve their fingerprint via three routes: GUI (Tools → Show Machine Fingerprint... — modal with Copy button), CLI (`chombeza --fingerprint` — pipe-friendly stdout), or the trial-expired Activation dialog. Available at any time, regardless of trial state. |
+| **Author's licence-issuer tooling** | Single command `.\issue_license.bat` walks through prompts (customer name / org / email / subscription type / tier / machine fingerprints), shows a confirmation summary, then signs and writes the `.lic` file. Output lands in `keys\issued\<customer>-<id>.lic` ready to email. CLI variant `tools/generate_license.py` for scripted workflows. ([issue_license.bat](issue_license.bat), [tools/generate_license.py](tools/generate_license.py), [tools/issue_license_interactive.py](tools/issue_license_interactive.py)) |
+| **Re-auth circuit breaker** | Detection of broken target auth backends now stops re-trying after 3 consecutive failures per host (5-min cooldown), 30 attempts per scan, with a 5s minimum gap between attempts. Replaces the prior "attempt #531, #532..." infinite loop. |
+| **Auto-rotation of session/CSRF tokens** | Real apps rotate `csrftoken`/`sessionid`/`XSRF-TOKEN` mid-session. CHOMBEZA now extracts fresh values from every response (Set-Cookie, `<meta name="csrf-token">`, hidden form fields, `X-CSRF-Token` headers) and silently fans them across all worker threads. ([core/auth_rotation.py](core/auth_rotation.py)) |
+| **HTTP method tampering** | Always-on (zero side-effect): OPTIONS probe + HEAD-vs-GET authz bypass detection. Off-by-default (gated): DELETE/PUT/PATCH fuzzing with three nested gates — opt-in checkbox AND OPTIONS-confirmed verb support AND non-financial URL pattern. Three new finding types (CWE-863, CWE-650). ([core/method_fuzz.py](core/method_fuzz.py)) |
+| **Professional installer experience** | Inno Setup wizard with formal language (no emoji), custom welcome and finish messages, evaluation-licence acknowledgement modal, code-signing-ready spec file. Add/Remove Programs entry shows version. ([packaging/chombeza.iss](packaging/chombeza.iss)) |
+| **Linux .deb package** | Real Debian package (lintian-checkable) with proper `DEBIAN/control`, `postinst`, `prerm`, `postrm` scripts. Installs to `/opt/chombeza/`, registers menu entry under Security category, creates `/usr/bin/chombeza` symlink. ([packaging/build_deb.sh](packaging/build_deb.sh)) |
+| **Source-code protection** | Sensitive core modules (scanner, auth, license verification, AI integration — 34 modules total) are Cython-compiled to native `.pyd`/`.so` binaries before bundling. The `.py` source is removed from the shipped bundle. Casual reverse engineering with `pyinstxtractor` recovers only UI glue — not the scanner brains or licence verifier. ([packaging/cythonize_core.py](packaging/cythonize_core.py)) |
+| **Per-build HMAC key rotation** | Every release build generates a fresh 64-byte random secret and rewrites the trial-marker signing key in the build snapshot. Cracking one build's trial signing key doesn't help with any other build. ([packaging/build_release.py](packaging/build_release.py)) |
+| **Writable data directory on installed builds** | When running from a system-installed location (`C:\Program Files\CHOMBEZA\`, `/opt/chombeza/`), all writable state (reports, AI memory, crash logs, trial markers, licence file) goes to per-user appdata so non-admin users can run the app without permission errors. Fixes the prior `[WinError 5] Access is denied: 'reports'` crash on first launch. ([main.py](main.py)) |
+| **Build automation** | Two simple wrappers (`packaging/build_windows.bat`, `packaging/build_linux.sh`) plus the full hardened pipeline (`packaging/build_release.py --win` / `--linux`). The latter rotates the HMAC key, Cython-compiles the protected modules, runs PyInstaller, and wraps with Inno Setup or `dpkg-deb`. ([BUILD.md](BUILD.md), [BUILD_LICENSE.md](BUILD_LICENSE.md)) |
 
 ## ✨ What's new in 2.4
 
@@ -171,38 +195,53 @@ A big iteration focused on adaptive intelligence, coverage breadth, accuracy, wo
 
 ## 📥 Installation
 
-### Windows
+> The recommended path is the official installer from the [Releases page](https://github.com/archnexus707/chombeza/releases/latest). Build-from-source remains supported for developers who want to modify the code.
 
-```bat
-git clone https://github.com/archnexus707/chombeza.git
-cd chombeza
+### Recommended: Official installer (end users)
 
-:: Run the installer (creates venv, installs deps, drops run.bat)
-install.bat
+Download the latest installer for your platform from the [Releases page](https://github.com/archnexus707/chombeza/releases/latest):
 
-:: Launch
-run.bat                            :: GUI
-run.bat https://target.tld         :: CLI scan
-```
+| Platform | Installer File | Install Command |
+|---|---|---|
+| Windows | `CHOMBEZA-BugBounty-Pro-Setup-v5.0.0.exe` | Double-click and follow the wizard |
+| Linux (Debian / Ubuntu / Kali / Parrot) | `chombeza_5.0.0_amd64.deb` | `sudo dpkg -i chombeza_5.0.0_amd64.deb && sudo apt -f install` |
 
-The installer:
-- Requires **Python 3.8+** (checked automatically)
-- Creates a local `venv/`
-- Installs core dependencies from [requirements.txt](requirements.txt)
-- *Tries* optional extras from [requirements-optional.txt](requirements-optional.txt) but never fails the install if they don't build (weasyprint needs GTK — it's fine to skip)
-- Warns if **Chrome / Chromium** isn't detected (needed for evidence screenshots)
+The installer includes a **30-day evaluation licence**. After the evaluation period the application requires a commercial licence — see [Commercial Licensing](#-commercial-licensing) below.
 
-### Linux / macOS
+After installation:
+
+| Platform | Launch |
+|---|---|
+| Windows | Start Menu → CHOMBEZA Bug Bounty Pro (or `chombeza` from PowerShell if you ticked the desktop icon during install) |
+| Linux | Applications menu → Security → CHOMBEZA Bug Bounty Pro (or `chombeza` from any terminal) |
+
+### Build from source (developers)
+
+If you want to read or modify the code, run:
 
 ```bash
 git clone https://github.com/archnexus707/chombeza.git
 cd chombeza
 
-bash install.sh
+# Windows
+install.bat
+run.bat                            # GUI
+run.bat https://target.tld         # CLI scan
 
+# Linux / macOS
+bash install.sh
 ./run.sh                           # GUI
 ./run.sh https://target.tld        # CLI scan
 ```
+
+The dev-mode installer:
+- Requires **Python 3.8+** (checked automatically)
+- Creates a local `venv/`
+- Installs core dependencies from [requirements.txt](requirements.txt) (now includes `cryptography` for the Ed25519 licence layer)
+- *Tries* optional extras from [requirements-optional.txt](requirements-optional.txt) but never fails the install if they don't build (weasyprint needs GTK — it's fine to skip)
+- Warns if **Chrome / Chromium** isn't detected (needed for evidence screenshots)
+
+To produce your own signed installer, see [BUILD.md](BUILD.md). To issue commercial licences with your own keypair, see [BUILD_LICENSE.md](BUILD_LICENSE.md).
 
 The Linux/macOS installer detects your OS and prints distro-specific hints for any system packages you may need (Chromium, Pango, libxkbcommon, etc.). macOS installs via `brew` hints.
 
@@ -250,6 +289,59 @@ brew install pango cairo gdk-pixbuf libffi
 
 ---
 
+## 💼 Commercial Licensing
+
+CHOMBEZA Bug Bounty Pro ships with a **30-day evaluation licence** for every fresh install. After the evaluation period, the application requires a commercial licence to continue.
+
+### Subscription Tiers
+
+| Subscription | Tier | Machines | Typical Use |
+|---|---|---:|---|
+| **Monthly** (30 days) | Single | 1 | Solo researcher, short engagement |
+| **Monthly** (30 days) | Team | up to 5 | Small team, single-month consulting |
+| **Annual** (365 days) | Single | 1 | Solo researcher, long-term licensing |
+| **Annual** (365 days) | Team | up to 5 | Internal security teams, enterprise sandbox |
+
+For pricing, custom enterprise tiers, or to purchase, contact:
+
+> **Dickson Massawe (archnexus)**
+> Email: [archnexus707@gmail.com](mailto:archnexus707@gmail.com)
+> GitHub: [@archnexus707](https://github.com/archnexus707)
+
+### Activation Workflow
+
+1. **Retrieve your machine fingerprint.** Three ways:
+   - GUI: **Tools → Show Machine Fingerprint…** (modal with Copy button)
+   - CLI: `chombeza --fingerprint`
+   - Trial-expired Activation dialog (shown automatically once the trial ends)
+
+2. **Send the fingerprint** (32 hex characters) to `archnexus707@gmail.com` along with proof of payment. The fingerprint is non-sensitive — plain email or messaging is fine.
+
+3. **Receive your `.lic` file** by email reply. The licence is signed with the author's private Ed25519 key and bound to the fingerprint(s) you supplied.
+
+4. **Install the licence** using either approach:
+   - **Tools → Import Licence File…** — file picker, available even during an active trial. Useful for pre-paying customers.
+   - **Trial-expired Activation dialog → Load Licence File…** — appears automatically when the trial ends.
+   - **Manual** — copy the `.lic` to the canonical location:
+
+     | OS | Location |
+     |---|---|
+     | Windows | `%APPDATA%\CHOMBEZA\license.lic` |
+     | Linux | `~/.config/CHOMBEZA/license.lic` |
+     | macOS | `~/Library/Application Support/CHOMBEZA/license.lic` |
+
+5. **Re-launch CHOMBEZA.** The activation dialog no longer appears; the title bar shows your name as the licensed customer.
+
+### Hardware Binding
+
+Each `.lic` is cryptographically bound to one or more machine fingerprints (MAC + hostname + architecture + BIOS UUID on Windows, machine-id on Linux). Copying the file to a different machine produces a clear "wrong machine" rejection. To add machines (within your tier) or move the licence to a new computer, contact the author for a re-issue.
+
+### Renewals
+
+When your subscription approaches expiry, the title bar shows the remaining days. Contact the author to purchase a renewal; you'll receive a fresh `.lic` to drop in over the existing one. There is no service interruption if the new licence arrives before the old one expires.
+
+---
+
 ## ⚡ Quick Start
 
 ```bash
@@ -271,6 +363,17 @@ python main.py --blind-xss --blind-xss-port 5000
 
 # Through a proxy
 python main.py https://target.tld --proxy http://127.0.0.1:8080
+
+# Print this machine's licence fingerprint (works during active trial too)
+python main.py --fingerprint
+```
+
+**For installed builds** (Windows installer / `.deb`), substitute `chombeza` for `python main.py`:
+
+```bash
+chombeza https://target.tld --scan-type quick
+chombeza --fingerprint
+chombeza --list-scans
 ```
 
 ---
@@ -319,6 +422,7 @@ usage: main.py [-h] [--list-scans] [--resume SCAN_ID] [--delete-scan SCAN_ID]
                [--blind-xss] [--blind-xss-port PORT]
                [--no-screenshot] [--proxy PROXY] [--user-agent UA]
                [--vuln-types VULN [VULN ...]] [--config PATH]
+               [--fingerprint]
                [--ai-provider {claude,openai,deepseek,ollama}]
                [--ai-key KEY] [--ai-model MODEL] [--ai-host URL]
                [--ai-test] [--ai-disabled]
@@ -346,6 +450,7 @@ usage: main.py [-h] [--list-scans] [--resume SCAN_ID] [--delete-scan SCAN_ID]
 | `--list-scans` | Print saved scans (id, status, target, pending/done/vulns) |
 | `--resume SCAN_ID` | Resume a paused scan |
 | `--delete-scan SCAN_ID` | Remove a saved scan from the store |
+| `--fingerprint` | Print this machine's licence fingerprint (32 hex chars) and exit. Works during active trial AND after expiry. Pipe-friendly: `chombeza --fingerprint \| clip` (Windows) or `\| xclip` (Linux) |
 
 ### AI / LLM enhancement flags (Bring-Your-Own-Key)
 
@@ -828,7 +933,7 @@ Proprietary — see [LICENSE.txt](LICENSE.txt). Non-commercial and educational u
 
 ## 👨‍💻 Author
 
-**Dickson Godwin Massawe** — [@archnexus707](https://github.com/archnexus707)
+**Dickson Massawe (archnexus)** — [@archnexus707](https://github.com/archnexus707) — [archnexus707@gmail.com](mailto:archnexus707@gmail.com)
 
 Security researcher · bug-bounty hunter · full-stack developer.
 Based in Tanzania 🇹🇿.
